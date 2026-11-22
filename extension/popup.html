@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+:root{--bg:#fff;--fg:#1b1f24;--mut:#6b7280;--acc:#2563eb;--bd:#e5e7eb;--err:#dc2626;--ok:#16a34a}
+@media(prefers-color-scheme:dark){:root{--bg:#181b21;--fg:#e6e8eb;--mut:#9aa1ab;--bd:#2a2f37;--acc:#3b82f6}}
+body{margin:0;width:300px;padding:14px;font:14px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+h1{font-size:15px;margin:0 0 8px}.u{color:var(--mut);font-size:12px;word-break:break-all;margin-bottom:10px;max-height:48px;overflow:hidden}
+select,button{font:inherit;color:inherit;width:100%;padding:8px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);margin-bottom:8px}
+button{background:var(--acc);color:#fff;border:0;font-weight:600;cursor:pointer}button:disabled{opacity:.5}
+label{display:block;margin-bottom:10px;font-size:13px}#msg{font-size:13px;min-height:18px}.err{color:var(--err)}.ok{color:var(--ok)}
+a{color:var(--acc);font-size:13px}</style></head><body>
+<h1>VidGrab</h1><div class="u" id="url"></div>
+<select id="q"><option value="best">Best quality</option><option value="1080">1080p</option>
+<option value="720">720p</option><option value="480">480p</option><option value="audio">Audio only (mp3)</option></select>
+<label><input type="checkbox" id="pl"> Whole playlist</label>
+<button id="go" disabled>Download</button><div id="msg"></div>
+<a href="http://127.0.0.1:8765" target="_blank">Open VidGrab</a>
+<script src="api.js"></script><script src="popup.js"></script></body></html>

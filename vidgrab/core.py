@@ -10,6 +10,7 @@ import html.parser
 import os
 import re
 import shutil
+import threading
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
@@ -38,7 +39,7 @@ QUALITY = {
 
 @dataclass
 class Progress:
-    status: str = "queued"  # queued|downloading|processing|done|error
+    status: str = "queued"  # queued|downloading|processing|done|error|cancelled
     percent: float = 0.0
     downloaded: int = 0
     total: Optional[int] = None
@@ -51,6 +52,29 @@ class Progress:
 
 
 ProgressCB = Callable[[Progress], None]
+
+
+class Cancelled(Exception):
+    pass
+
+
+_BAD_TITLE = re.compile(r"^\s*(none|na|null|untitled|video)?\s*(\(\d+\))?\s*$", re.I)
+
+
+def clean_title(info: dict) -> str:
+    """Pick a usable title. yt-dlp's generic extractor can return e.g. 'None (1)'."""
+    title = info.get("title")
+    if title and not _BAD_TITLE.match(str(title)):
+        return str(title)
+    fmts = info.get("formats") or []
+    candidates = [info.get("url")] + [f.get("url") for f in fmts[-1:]]
+    for u in candidates:
+        if u:
+            base = os.path.splitext(os.path.basename(urllib.parse.urlparse(u).path))[0]
+            if base and not _BAD_TITLE.match(base):
+                return urllib.parse.unquote(base)
+    host = urllib.parse.urlparse(info.get("webpage_url") or "").hostname
+    return f"video from {host}" if host else "video"
 
 
 def has_ffmpeg() -> bool:
@@ -95,17 +119,36 @@ def download(
     subtitles: bool = False,
     cookies_from_browser: Optional[str] = None,
     on_progress: Optional[ProgressCB] = None,
+    cancel: Optional[threading.Event] = None,
 ) -> Progress:
-    """Download a video. Tries yt-dlp, then the generic fallback."""
+    """Download a video. Tries yt-dlp, then the generic fallback.
+
+    Set the ``cancel`` event from another thread to stop the download.
+    """
     os.makedirs(out_dir, exist_ok=True)
     prog = Progress()
-    emit = on_progress or (lambda p: None)
+    cancel = cancel or threading.Event()
+    user_emit = on_progress or (lambda p: None)
+
+    def emit(p):
+        if cancel.is_set():
+            raise Cancelled()
+        user_emit(p)
+
+    def cancelled():
+        prog.status = "cancelled"
+        prog.error = None
+        _remove_partials(out_dir, prog.filename)
+        user_emit(prog)
+        return prog
 
     if yt_dlp is not None:
         try:
             return _ytdlp_download(url, out_dir, quality, playlist, subtitles,
                                    cookies_from_browser, prog, emit)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001  (yt-dlp may wrap Cancelled)
+            if cancel.is_set():
+                return cancelled()
             ytdlp_err = _clean_err(e)
     else:
         ytdlp_err = "yt-dlp not installed"
@@ -114,6 +157,8 @@ def download(
     try:
         return _generic_download(url, out_dir, prog, emit)
     except Exception as e:  # noqa: BLE001
+        if cancel.is_set():
+            return cancelled()
         prog.status = "error"
         prog.error = f"yt-dlp: {ytdlp_err} | fallback: {_clean_err(e)}"
         emit(prog)
@@ -174,8 +219,9 @@ def _ytdlp_download(url, out_dir, quality, playlist, subtitles, browser, prog, e
         opts["cookiesfrombrowser"] = (browser,)
 
     with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl.add_post_processor(_TitleFixer(), when="pre_process")
         data = ydl.extract_info(url, download=True)
-        prog.title = data.get("title")
+        prog.title = clean_title(data) if data.get("_type") != "playlist" else data.get("title")
         if not prog.files:
             for e in data.get("entries") or [data]:
                 if e and e.get("requested_downloads"):
@@ -184,6 +230,28 @@ def _ytdlp_download(url, out_dir, quality, playlist, subtitles, browser, prog, e
     prog.percent = 100.0
     emit(prog)
     return prog
+
+
+if yt_dlp is not None:
+    class _TitleFixer(yt_dlp.postprocessor.PostProcessor):
+        """Runs before the filename is built, replacing junk titles."""
+
+        def run(self, info):
+            info["title"] = clean_title(info)
+            return [], info
+
+
+def _remove_partials(out_dir, filename):
+    if not filename:
+        return
+    stem = os.path.splitext(filename)[0].split(".f")[0]
+    for name in os.listdir(out_dir):
+        if name.startswith(stem) and (name.endswith(".part") or ".part-Frag" in name
+                                      or name.endswith(".ytdl")):
+            try:
+                os.remove(os.path.join(out_dir, name))
+            except OSError:
+                pass
 
 
 # -------------------------------------------------------------------- generic

@@ -40,14 +40,15 @@ def main(argv=None) -> int:
     ap.add_argument("-f", "--find", action="store_true",
                     help="list direct media links found in the page HTML")
     ap.add_argument("--web", action="store_true", help="start the web UI")
-    ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--host", default="127.0.0.1", help=argparse.SUPPRESS)
     ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--no-browser", action="store_true", help="with --web: don't open a browser tab")
     ap.add_argument("-V", "--version", action="version", version=__version__)
     a = ap.parse_args(argv)
 
     if a.web:
         from .web import serve
-        serve(a.host, a.port, a.output)
+        serve(a.host, a.port, a.output, open_browser=not a.no_browser)
         return 0
     if not a.urls:
         ap.print_help()

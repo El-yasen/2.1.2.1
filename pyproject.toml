@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vidgrab"
+version = "0.2.0"
+description = "Download videos from web pages: CLI, local web UI and browser extension"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["yt-dlp>=2025.1.1"]
+
+[project.scripts]
+vidgrab = "vidgrab.cli:main"
+vidgrab-app = "vidgrab.app:main"
+
+[tool.setuptools]
+packages = ["vidgrab"]
